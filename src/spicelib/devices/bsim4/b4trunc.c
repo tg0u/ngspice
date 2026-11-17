@@ -28,44 +28,76 @@ standard can be found at: http://www.si2.org/cmc
 #include "ngspice/sperror.h"
 #include "ngspice/suffix.h"
 
-int
-BSIM4trunc(
-GENmodel *inModel,
-CKTcircuit *ckt,
-double *timeStep)
-{
-BSIM4model *model = (BSIM4model*)inModel;
-BSIM4instance *here;
+#ifdef USE_OMP
+#include <omp.h>
+#endif
 
+static void
+BSIM4truncInstance(BSIM4instance *here, CKTcircuit *ckt,
+                      double *timeStep)
+{
+    CKTterr(here->BSIM4qb, ckt, timeStep);
+    CKTterr(here->BSIM4qg, ckt, timeStep);
+    CKTterr(here->BSIM4qd, ckt, timeStep);
+    if (here->BSIM4trnqsMod)
+        CKTterr(here->BSIM4qcdump, ckt, timeStep);
+    if (here->BSIM4rbodyMod) {
+        CKTterr(here->BSIM4qbs, ckt, timeStep);
+        CKTterr(here->BSIM4qbd, ckt, timeStep);
+    }
+    if (here->BSIM4rgateMod == 3)
+        CKTterr(here->BSIM4qgmid, ckt, timeStep);
+}
+
+int
+BSIM4trunc(GENmodel *inModel, CKTcircuit *ckt, double *timeStep)
+{
+    BSIM4model *model = (BSIM4model *) inModel;
+    BSIM4instance *here;
 #ifdef STEPDEBUG
     double debugtemp;
-#endif /* STEPDEBUG */
+#endif
 
-    for (; model != NULL; model = BSIM4nextModel(model))
-    {    for (here = BSIM4instances(model); here != NULL;
-           here = BSIM4nextInstance(here))
-     {
+#if defined(USE_OMP) && !defined(STEPDEBUG)
+    /* CKTterr reads the fixed state history and only limits its argument.
+     * Reuse the instance array of the parallel model evaluation and merge
+     * one timestep per thread, keeping a minimum grain of 256 instances per requested thread. */
+    const int threads = omp_get_max_threads();
+    if (model && threads > 1 && model->BSIM4InstCount / threads >= 256) {
+        const double initialStep = *timeStep;
+        double limitedStep = initialStep;
+        int index;
+#pragma omp parallel
+        {
+            double localStep = initialStep;
+#pragma omp for schedule(static)
+            for (index = 0; index < model->BSIM4InstCount; index++)
+                BSIM4truncInstance(model->BSIM4InstanceArray[index],
+                                      ckt, &localStep);
+#pragma omp critical
+            {
+                if (localStep < limitedStep)
+                    limitedStep = localStep;
+            }
+        }
+        *timeStep = limitedStep;
+        return OK;
+    }
+#endif
+
+    for (; model != NULL; model = BSIM4nextModel(model)) {
+        for (here = BSIM4instances(model); here != NULL;
+                here = BSIM4nextInstance(here)) {
 #ifdef STEPDEBUG
             debugtemp = *timeStep;
-#endif /* STEPDEBUG */
-            CKTterr(here->BSIM4qb,ckt,timeStep);
-            CKTterr(here->BSIM4qg,ckt,timeStep);
-            CKTterr(here->BSIM4qd,ckt,timeStep);
-            if (here->BSIM4trnqsMod)
-                CKTterr(here->BSIM4qcdump,ckt,timeStep);
-            if (here->BSIM4rbodyMod)
-            {   CKTterr(here->BSIM4qbs,ckt,timeStep);
-                CKTterr(here->BSIM4qbd,ckt,timeStep);
-        }
-        if (here->BSIM4rgateMod == 3)
-        CKTterr(here->BSIM4qgmid,ckt,timeStep);
+#endif
+            BSIM4truncInstance(here, ckt, timeStep);
 #ifdef STEPDEBUG
-            if(debugtemp != *timeStep)
-        {  printf("device %s reduces step from %g to %g\n",
-                       here->BSIM4name,debugtemp,*timeStep);
-            }
-#endif /* STEPDEBUG */
+            if (debugtemp != *timeStep)
+                printf("device %s reduces step from %g to %g\n",
+                       here->BSIM4name, debugtemp, *timeStep);
+#endif
         }
     }
-    return(OK);
+    return OK;
 }
