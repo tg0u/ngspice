@@ -1,0 +1,58 @@
+name: AMS regression
+on:
+  push:
+    branches: [ams]
+  pull_request:
+    branches: [ams]
+  workflow_dispatch:
+    inputs:
+      extended:
+        description: Run the 16/32-thread correctness tests (no timing claims)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: ams-regression-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [openmp, serial, sanitizers]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool bison flex python3 perl
+      - name: Build and compare with the pinned upstream source
+        shell: bash
+        env:
+          AMS_PROFILE: ${{ matrix.profile }}
+          AMS_EXTENDED: ${{ inputs.extended }}
+        run: |
+          extra=()
+          if [[ "$AMS_EXTENDED" == true && "$AMS_PROFILE" == openmp ]]; then
+            extra+=(--extended)
+          fi
+          python3 maintenance/validate.py --profile "$AMS_PROFILE" \
+            --work "$RUNNER_TEMP/ams-$AMS_PROFILE" --jobs 2 "${extra[@]}"
+      - name: Preserve validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ams-${{ matrix.profile }}-${{ github.sha }}
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/ams-${{ matrix.profile }}/result.json
+            ${{ runner.temp }}/ams-${{ matrix.profile }}/**/logs/*.log
+            ${{ runner.temp }}/ams-${{ matrix.profile }}/direct/run.log
+            ${{ runner.temp }}/ams-${{ matrix.profile }}/extended/run.log
+            ${{ runner.temp }}/ams-${{ matrix.profile }}/transients/**/run.log

@@ -94,3 +94,5 @@ test_cases/diode/test_built_in/*
 
 build*/
 prof/
+
+maintenance/__pycache__/

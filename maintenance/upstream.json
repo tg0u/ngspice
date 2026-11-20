@@ -1,0 +1,15 @@
+{
+  "release": "ams-47.1",
+  "upstream_url": "https://git.code.sf.net/p/ngspice/ngspice",
+  "upstream_tag": "ngspice-47",
+  "upstream_commit": "a80f6e3e95d51534905b1f23410a951802666656",
+  "development_branch": "pre-master-48",
+  "patches": [
+    {
+      "id": "parallel-bsim4-truncation",
+      "upstream_ticket": "https://sourceforge.net/p/ngspice/patches/142/",
+      "scope": "BSIM4 4.5/4.6.5/4.7/4.8.3 transient truncation only",
+      "activation": "At least 256 instances per requested OpenMP thread"
+    }
+  ]
+}
