@@ -9,7 +9,7 @@ TESTS_ENVIRONMENT = \
 
 EXTRA_DIST = \
 	$(TESTS) \
-	nmos pmos
+	nmos pmos truncation
 
 MAINTAINERCLEANFILES = Makefile.in
 
